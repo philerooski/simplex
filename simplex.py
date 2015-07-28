@@ -1,6 +1,7 @@
 import numpy as np
+np.set_printoptions(precision=3)
 
-EPSILON = 1e-6
+EPSILON = 1e-3
 
 A = np.array([[1, 2, 3, 0], 
                 [-1, 2, 6, 0], 
@@ -21,8 +22,11 @@ def simplex(A, b, c, basic_indices):
     tableau = np.concatenate((np.atleast_2d(np.dot(basis_inverse, b)).T, 
         np.dot(basis_inverse, A)), axis=1) 
     basic_cost_coeff = get_cols(c, basic_indices)
-    neg_cost = -np.dot(basic_cost_coeff, tableau.T[0])
-    reduced_costs = c.T - np.dot(basic_cost_coeff, tableau.T[1:].T)[0]
+    get_reduced_costs = lambda b, t: c.T - np.dot(b, t.T[1:].T)[0]
+    get_neg_cost = lambda b, t: -np.dot(b, t.T[0])
+    neg_cost = get_neg_cost(basic_cost_coeff, tableau)
+    reduced_costs = get_reduced_costs(basic_cost_coeff, tableau)
+    iterations = 0
     while not all(reduced_costs > np.zeros(len(reduced_costs)) - EPSILON):
         entering_index = 0
         for index in range(len(reduced_costs)):
@@ -37,8 +41,21 @@ def simplex(A, b, c, basic_indices):
             else: 
                 ratios.append(float('inf'))
         exiting_basic_index = ratios.index(min(ratios))
-        #TODO: apply pivot transformations to simplex tableau
+        for row in range(len(tableau)):
+            if row != exiting_basic_index:
+                tableau[row] -= (tableau[exiting_basic_index] * 
+                entering_col[row] / entering_col[exiting_basic_index])
+            else:
+                tableau[row] /= entering_col[exiting_basic_index] 
+        basic_indices[exiting_basic_index] = entering_index
+        basic_cost_coeff = get_cols(c, basic_indices)
+        neg_cost = get_neg_cost(basic_cost_coeff, tableau)
+        reduced_costs -= (tableau.T[1:].T[exiting_basic_index] * 
+                (reduced_costs[entering_index] 
+                / entering_col[exiting_basic_index]))
+        iterations += 1
         break
+        #TODO: convergence is too slow
     return 1, 2
             
 
