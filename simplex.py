@@ -1,28 +1,22 @@
 import numpy as np
 np.set_printoptions(precision=3)
 
-EPSILON = 1e-3
-
-A = np.array([[1, 2, 3, 0], 
-                [-1, 2, 6, 0], 
-                [0, 4, 9, 0],
-                [0, 0, 3, 1]])
-c = np.array([1, 2, 3, 0])
-b = np.array([3, 2, 5, 1]).T
+EPSILON = 1e-6
 
 def get_initial_bfs(A, b, c):
     '''Find an initial basic feasible solution to the LP problem.
         This requires applying the simplex method to an auxilary LP problem.'''
     aux_A = np.concatenate((A, np.identity(len(A))), axis=1)
-    aux_c = np.concatenate((np.zeros(len(A)), np.ones(len(A))), axis=1)
+    aux_c = np.concatenate((np.zeros(len(A.T)), np.ones(len(A))), axis=1)
     aux_basic_indices = np.array(range(len(A.T), len(aux_A.T)))
-    basic_indices, basic_cost_coeff, neg_cost, reduced_costs, tableau \
+    basic_indices, neg_cost, reduced_costs, tableau \
             = simplex(aux_A, b, aux_c, aux_basic_indices)
-    if neg_cost > 0: # unable to set all artificial variables to 0
+    if neg_cost != 0: # unable to set all artificial variables to 0
         raise Exception("No feasible solutions exist")
     if any(basic_indices >= len(A.T)): # remove any leftover artificial variables
         artificial_vars = filter(lambda i: basic_indices[i] >= len(A.T), 
                 range(len(basic_indices)))
+        to_delete = []
         for var in artificial_vars:
             row = A.T[1:][var]
             for i in row:
@@ -31,11 +25,13 @@ def get_initial_bfs(A, b, c):
             if basic_indices[var] >= len(A.T):
                 # if no replacement found, there is a 
                 # linear dependence in the row space of A 
-                basic_indices = np.delete(basic_indices, var)
-                b = np.delete(b, var)
-                A = np.delete(A, var, axis=0)
+                to_delete.append(basic_indices[var])
+        for i in to_delete:
+            var = basic_indices.tolist().index(i)
+            basic_indices = np.delete(basic_indices, var)
+            b = np.delete(b, var)
+            A = np.delete(A, var, axis=0)
     tableau = np.delete(tableau.T[1:], range(len(A.T), len(aux_A.T)), 0).T
-    #TODO: return all relevent information, optimize methods
     return basic_indices, A, b, tableau
 
 def simplex(A, b, c, basic_indices):
@@ -43,11 +39,9 @@ def simplex(A, b, c, basic_indices):
     basis_inverse = np.linalg.inv(basis)
     tableau = np.concatenate((np.atleast_2d(np.dot(basis_inverse, b)).T, 
         np.dot(basis_inverse, A)), axis=1) 
-    basic_cost_coeff = get_cols(c, basic_indices)
-    get_reduced_costs = lambda b, t: c.T - np.dot(b, t.T[1:].T)[0]
-    get_neg_cost = lambda b, t: -np.dot(b, t.T[0])
-    neg_cost = get_neg_cost(basic_cost_coeff, tableau)
-    reduced_costs = get_reduced_costs(basic_cost_coeff, tableau)
+    basic_cost_coeff = get_cols(c, basic_indices)[0]
+    neg_cost = -np.dot(basic_cost_coeff, tableau.T[0])
+    reduced_costs = c.T - np.dot(basic_cost_coeff, tableau.T[1:].T)[0]
     iterations = 0
     while not all(reduced_costs > np.zeros(len(reduced_costs)) - EPSILON):
         entering_index = 0
@@ -62,6 +56,8 @@ def simplex(A, b, c, basic_indices):
                 ratios.append(tableau.T[0][i] / entering_col[i])
             else: 
                 ratios.append(float('inf'))
+        if not any(np.array(ratios) < float('inf')):
+            raise Exception("Optimal cost is -infinity")
         exiting_index = ratios.index(min(ratios))
         for row in range(len(tableau)):
             if row != exiting_index:
@@ -70,22 +66,20 @@ def simplex(A, b, c, basic_indices):
             else:
                 tableau[row] /= entering_col[exiting_index] 
         basic_indices[exiting_index] = entering_index
-        basic_cost_coeff = get_cols(c, basic_indices)
+        basic_cost_coeff = get_cols(c, basic_indices)[0]
         neg_cost -= (reduced_costs[entering_index] 
             * tableau.T[0].T[exiting_index])
         reduced_costs -= (reduced_costs[entering_index] 
             * tableau.T[1:].T[exiting_index])
         iterations += 1
-        if iterations > 100:
-            break
-    return basic_indices, basic_cost_coeff, neg_cost, reduced_costs, tableau
+        if iterations > 1000:
+            print "Maximum iterations exceeded"
+            break 
+    return basic_indices, neg_cost, reduced_costs, tableau
             
-
 def get_cols(M, indices): 
     return np.column_stack([M.T[i] for i in indices])
 
 def optimize(A, b, c):
     basic_indices, A, b, tableau = get_initial_bfs(A, b, c)
     return simplex(A, b, c, basic_indices)
-
-print optimize(A, b, c)
