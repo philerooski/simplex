@@ -1,11 +1,22 @@
-import numpy as np
-np.set_printoptions(precision=3)
+''' simplex.py
+An implementation of the full tableau simplex algorithm.
+Author: Phil Snyder
+'''
 
+import numpy as np
 EPSILON = 1e-6
+
+# a somewhat trivial example, since variables A1, A2, A3 are linearly
+# independent (and thus the solution to Ax=b is uniquely determined).
+A = np.array([[1, 2, 2, 1, 0, 0],
+                [2, 1, 2, 0, 1, 0],
+                [2, 2, 1, 0, 0, 1]])
+b = np.array([20, 20, 20])
+c = np.array([-10, -12, -12, 0, 0, 0])
 
 def get_initial_bfs(A, b, c):
     '''Find an initial basic feasible solution to the LP problem.
-        This requires applying the simplex method to an auxilary LP problem.'''
+    This requires applying the simplex method to an auxilary LP problem.'''
     aux_A = np.concatenate((A, np.identity(len(A))), axis=1)
     aux_c = np.concatenate((np.zeros(len(A.T)), np.ones(len(A))), axis=1)
     aux_basic_indices = np.array(range(len(A.T), len(aux_A.T)))
@@ -35,16 +46,21 @@ def get_initial_bfs(A, b, c):
     return basic_indices, A, b, tableau
 
 def simplex(A, b, c, basic_indices):
+    '''Run (up to 1000) iterations of the simplex method until 
+    the reduced costs of all variables are less than EPSILON'''
     basis = get_cols(A, basic_indices)
     basis_inverse = np.linalg.inv(basis)
     tableau = np.concatenate((np.atleast_2d(np.dot(basis_inverse, b)).T, 
         np.dot(basis_inverse, A)), axis=1) 
     basic_cost_coeff = get_cols(c, basic_indices)[0]
     neg_cost = -np.dot(basic_cost_coeff, tableau.T[0])
-    reduced_costs = c.T - np.dot(basic_cost_coeff, tableau.T[1:].T)[0]
+    reduced_costs = c - np.dot(basic_cost_coeff, tableau.T[1:].T)
     iterations = 0
     while not all(reduced_costs > np.zeros(len(reduced_costs)) - EPSILON):
+        # there exists a basic feasible direction we can head in that will 
+        # reduce our cost function c'x
         entering_index = 0
+        # bland's rule (smallest subscript) is used for pivoting
         for index in range(len(reduced_costs)):
             if reduced_costs[index] < -EPSILON:
                 entering_index = index
@@ -66,7 +82,6 @@ def simplex(A, b, c, basic_indices):
             else:
                 tableau[row] /= entering_col[exiting_index] 
         basic_indices[exiting_index] = entering_index
-        basic_cost_coeff = get_cols(c, basic_indices)[0]
         neg_cost -= (reduced_costs[entering_index] 
             * tableau.T[0].T[exiting_index])
         reduced_costs -= (reduced_costs[entering_index] 
@@ -78,8 +93,15 @@ def simplex(A, b, c, basic_indices):
     return basic_indices, neg_cost, reduced_costs, tableau
             
 def get_cols(M, indices): 
+    '''Returns the columns of M at the specified indices'''
     return np.column_stack([M.T[i] for i in indices])
 
 def optimize(A, b, c):
+    '''The primary function of simplex.py. Accepts a matrix A in R^m*n of 
+    constraint coefficients, a vector b in R^m of equalities, and a vector 
+    c in R^n of cost coefficients. The simplex method returns a solution 
+    to Ax=b that minimizes the objective function c'x. All parameters are
+    np.array. returns cost, basic indices and their values'''
     basic_indices, A, b, tableau = get_initial_bfs(A, b, c)
-    return simplex(A, b, c, basic_indices)
+    basic_indices, neg_cost, reduced_costs, tableau = simplex(A, b, c, basic_indices)
+    return -neg_cost, basic_indices, tableau.T[0]
